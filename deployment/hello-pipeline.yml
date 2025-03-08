@@ -1,0 +1,33 @@
+# azure-pipelines.yml
+trigger:
+  - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+steps:
+- task: PowerShell@2
+  displayName: 'Hello World'
+  inputs:
+    targetType: 'inline'
+    script: |
+      Write-Host "Hello, World from Azure DevOps Pipeline!"
+      Write-Host "Current time is: $(Get-Date)"
+      Write-Host "Running on branch: $(Build.SourceBranchName)"
+
+- task: PowerShell@2
+  displayName: 'Show Environment Variables'
+  inputs:
+    targetType: 'inline'
+    script: |
+      Write-Host "Pipeline ID: $(System.DefinitionId)"
+      Write-Host "Build ID: $(Build.BuildId)"
+      Write-Host "Agent Name: $(Agent.Name)"
+      
+      # Display custom variables if passed to the pipeline
+      if ($env:ENVIRONMENT) {
+        Write-Host "Custom variable - Environment: $env:ENVIRONMENT"
+      }
+      if ($env:DEPLOYTARGET) {
+        Write-Host "Custom variable - Deploy Target: $env:DEPLOYTARGET"
+      }
