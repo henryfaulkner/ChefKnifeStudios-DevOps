@@ -7,17 +7,31 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using System.CommandLine;
 using System.CommandLine.Invocation;
+using Microsoft.Extensions.Configuration;
 
 namespace ChefKnifeStudios.DevOps.AzureDevOpsPipelineRunner
 {
     class Program
     {
+        const string APPROVAL_STATUS = "approved";
+        const string APPROVAL_COMMENT = "Approved by automation";
+
+        private static IConfiguration Configuration = null!;
+
         static async Task<int> Main(string[] args)
         {
+            // Load configuration from appsettings.json
+            var environment = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT") ?? "Development";
+            Configuration = new ConfigurationBuilder()
+                .SetBasePath(AppContext.BaseDirectory)
+                .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
+                .AddJsonFile($"appsettings.{environment}.json", optional: true, reloadOnChange: true)
+                .Build();
+
             var rootCommand = new RootCommand("Azure DevOps pipeline tools");
 
             // Run pipeline command
-            var runCommand = new Command("run", "Run an Azure DevOps pipeline");
+            var runCommand = new Command("run-pipline", "Run an Azure DevOps pipeline");
             ConfigureRunPipelineCommand(runCommand);
             rootCommand.AddCommand(runCommand);
 
@@ -44,82 +58,62 @@ namespace ChefKnifeStudios.DevOps.AzureDevOpsPipelineRunner
 
         static void ConfigureRunPipelineCommand(Command command)
         {
-            var orgOption = new Option<string>("--org", "Azure DevOps organization name") { IsRequired = true };
-            var projectOption = new Option<string>("--project", "Azure DevOps project name") { IsRequired = true };
             var pipelineIdOption = new Option<int>("--pipeline-id", "ID of the pipeline to run") { IsRequired = true };
-            var branchOption = new Option<string>("--branch", () => "main", "Git branch to run the pipeline on");
-            var tokenOption = new Option<string>("--token", "Azure DevOps personal access token") { IsRequired = true };
             var variablesOption = new Option<string>("--variables", "JSON string of variables to pass to the pipeline");
 
-            command.AddOption(orgOption);
-            command.AddOption(projectOption);
             command.AddOption(pipelineIdOption);
-            command.AddOption(branchOption);
-            command.AddOption(tokenOption);
             command.AddOption(variablesOption);
 
-            command.SetHandler(async (string organization, string project, int pipelineId, string branch, string token, string variablesJson) =>
+            command.SetHandler(async (int pipelineId, string variablesJson) =>
             {
+                string organization = Configuration["AzureDevOps:Organization"] ?? string.Empty;
+                string project = Configuration["AzureDevOps:Project"] ?? string.Empty;
+                string branch = Configuration["AzureDevOps:Branch"] ?? string.Empty;
+                string token = Configuration["AzureDevOps:PersonalAccessToken"] ?? string.Empty;
+
                 await RunPipeline(organization, project, pipelineId, branch, token, variablesJson);
-            }, orgOption, projectOption, pipelineIdOption, branchOption, tokenOption, variablesOption);
+            }, pipelineIdOption, variablesOption);
         }
 
         static void ConfigureApproveCommand(Command command)
         {
-            var orgOption = new Option<string>("--org", "Azure DevOps organization name") { IsRequired = true };
-            var projectOption = new Option<string>("--project", "Azure DevOps project name") { IsRequired = true };
             var approvalIdOption = new Option<string>("--approval-id", "ID of the approval to process") { IsRequired = true };
-            var tokenOption = new Option<string>("--token", "Azure DevOps personal access token") { IsRequired = true };
-            var commentOption = new Option<string>("--comment", () => "Approved programmatically", "Comment for the approval");
-            var statusOption = new Option<string>("--status", () => "approved", "Status of the approval (approved or rejected)");
 
-            command.AddOption(orgOption);
-            command.AddOption(projectOption);
             command.AddOption(approvalIdOption);
-            command.AddOption(tokenOption);
-            command.AddOption(commentOption);
-            command.AddOption(statusOption);
 
-            command.SetHandler(async (string organization, string project, string approvalId, string token, string comment, string status) =>
+            command.SetHandler(async (string approvalId) =>
             {
-                await ApproveStep(organization, project, approvalId, token, comment, status);
-            }, orgOption, projectOption, approvalIdOption, tokenOption, commentOption, statusOption);
+                string organization = Configuration["AzureDevOps:Organization"] ?? string.Empty;
+                string project = Configuration["AzureDevOps:Project"] ?? string.Empty;
+                string token = Configuration["AzureDevOps:PersonalAccessToken"] ?? string.Empty;
+
+                await ApproveStep(organization, project, approvalId, token, APPROVAL_COMMENT, APPROVAL_STATUS);
+            }, approvalIdOption);
         }
 
         static void ConfigureListApprovalsCommand(Command command)
         {
-            var orgOption = new Option<string>("--org", "Azure DevOps organization name") { IsRequired = true };
-            var projectOption = new Option<string>("--project", "Azure DevOps project name") { IsRequired = true };
-            var tokenOption = new Option<string>("--token", "Azure DevOps personal access token") { IsRequired = true };
-
-            command.AddOption(orgOption);
-            command.AddOption(projectOption);
-            command.AddOption(tokenOption);
-
-            command.SetHandler(async (string organization, string project, string token) =>
+            command.SetHandler(async () =>
             {
+                string organization = Configuration["AzureDevOps:Organization"] ?? string.Empty;
+                string project = Configuration["AzureDevOps:Project"] ?? string.Empty;
+                string token = Configuration["AzureDevOps:PersonalAccessToken"] ?? string.Empty;
+                string environment = Configuration["AzureDevOps:Environment"] ?? string.Empty;
+
                 await ListLatestPendingApprovals(organization, project, token);
-            }, orgOption, projectOption, tokenOption);
+            });
         }
 
         static void ConfigureListAndApproveApprovalsCommand(Command command)
         {
-            var orgOption = new Option<string>("--org", "Azure DevOps organization name") { IsRequired = true };
-            var projectOption = new Option<string>("--project", "Azure DevOps project name") { IsRequired = true };
-            var tokenOption = new Option<string>("--token", "Azure DevOps personal access token") { IsRequired = true };
-            var commentOption = new Option<string>("--comment", () => "Approved programmatically", "Comment for the approval");
-            var statusOption = new Option<string>("--status", () => "approved", "Status of the approval (approved or rejected)");
-
-            command.AddOption(orgOption);
-            command.AddOption(projectOption);
-            command.AddOption(tokenOption);
-            command.AddOption(commentOption);
-            command.AddOption(statusOption);
-
-            command.SetHandler(async (string organization, string project, string token, string comment, string status) =>
+            command.SetHandler(async () =>
             {
-                await ListAndApprovePendingApprovals(organization, project, token, comment, status);
-            }, orgOption, projectOption, tokenOption, commentOption, statusOption);
+                string organization = Configuration["AzureDevOps:Organization"] ?? string.Empty;
+                string project = Configuration["AzureDevOps:Project"] ?? string.Empty;
+                string token = Configuration["AzureDevOps:PersonalAccessToken"] ?? string.Empty;
+
+                await ListAndApprovePendingApprovals(organization, project, token, APPROVAL_COMMENT, APPROVAL_STATUS);
+            });
         }
 
         static async Task RunPipeline(string organization, string project, int pipelineId, string branch, string token, string variablesJson)
@@ -283,8 +277,8 @@ namespace ChefKnifeStudios.DevOps.AzureDevOpsPipelineRunner
         static async Task<List<JsonElement>> ListLatestPendingApprovals(string organization, string project, string token)
         {
             List<JsonElement> result = new List<JsonElement>();
-            
-            Console.WriteLine("Retrieving the latest pending approvals for each pipeline (using API 7.1)...");
+
+            Console.WriteLine("Retrieving the latest pending approvals for each pipeline in the QA environment (using API 7.1)...");
 
             using var client = new HttpClient();
 
@@ -320,10 +314,12 @@ namespace ChefKnifeStudios.DevOps.AzureDevOpsPipelineRunner
 
                             foreach (var approval in approvalsArray.EnumerateArray())
                             {
+                                Console.WriteLine(approval.ToString());
                                 string pipelineName = approval.GetProperty("pipeline").GetProperty("name").GetString();
                                 string createdOn = approval.GetProperty("createdOn").GetString();
+                                string environmentName = approval.GetProperty("environment").GetProperty("name").GetString();
 
-                                if (string.IsNullOrEmpty(pipelineName))
+                                if (string.IsNullOrEmpty(pipelineName) || environmentName != "QA")
                                     continue;
 
                                 // Keep the latest approval based on createdOn timestamp
@@ -336,7 +332,7 @@ namespace ChefKnifeStudios.DevOps.AzureDevOpsPipelineRunner
                             }
 
                             // Display results
-                            Console.WriteLine("\nPipeline Name\t\tApproval ID\t\t\t\tStart Time\t\tApprover\tDetails URL");
+                            Console.WriteLine("\nPipeline Name\t\tApproval ID\t\t\t\t\t\tStart Time\t\tApprover\tDetails URL");
                             Console.WriteLine("-----------------------------------------------------------------------------------------------------");
 
                             foreach (var kvp in latestApprovalsByPipeline)
@@ -354,7 +350,7 @@ namespace ChefKnifeStudios.DevOps.AzureDevOpsPipelineRunner
                         }
                         else
                         {
-                            Console.WriteLine("No pending approvals found.");
+                            Console.WriteLine("No pending approvals found in the QA environment.");
                         }
                     }
                     else
@@ -377,7 +373,7 @@ namespace ChefKnifeStudios.DevOps.AzureDevOpsPipelineRunner
             return result;
         }
 
-        static async Task ListAndApprovePendingApprovals(string organization, string project, string token, string comment = "Approved programmatically", string status = "approved")
+        static async Task ListAndApprovePendingApprovals(string organization, string project, string token, string comment, string status)
         {
             // First, list all the latest pending approvals
             Console.WriteLine("Listing latest pending approvals...");

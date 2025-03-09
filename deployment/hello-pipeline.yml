@@ -37,13 +37,53 @@ stages:
             Write-Host "Custom variable - Deploy Target: $env:DEPLOYTARGET"
           }
 
-- stage: Stage2
-  displayName: 'Stage Requiring Approval'
+- stage: TestDeploy
+  displayName: 'Stage Requiring Test Approval'
   dependsOn: Stage1
   jobs:
   - deployment: DeploymentJob
     displayName: 'Deployment with Approval'
     environment: 'Test'  # This creates the approval requirement
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: PowerShell@2
+            displayName: 'Post-Approval Steps'
+            inputs:
+              targetType: 'inline'
+              script: |
+                Write-Host "This step was executed after approval!"
+                Write-Host "Approval time: $(Get-Date)"
+                Write-Host "The approver granted permission to proceed."
+
+- stage: StageDeploy
+  displayName: 'Stage Requiring Prod Approval'
+  dependsOn: Stage1
+  jobs:
+  - deployment: DeploymentJob
+    displayName: 'Deployment with Approval'
+    environment: 'Stage'  # This creates the approval requirement
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: PowerShell@2
+            displayName: 'Post-Approval Steps'
+            inputs:
+              targetType: 'inline'
+              script: |
+                Write-Host "This step was executed after approval!"
+                Write-Host "Approval time: $(Get-Date)"
+                Write-Host "The approver granted permission to proceed."
+
+- stage: ProdDeploy
+  displayName: 'Stage Requiring Prod Approval'
+  dependsOn: StageDeploy
+  jobs:
+  - deployment: DeploymentJob
+    displayName: 'Deployment with Approval'
+    environment: 'Prod'  # This creates the approval requirement
     strategy:
       runOnce:
         deploy:
