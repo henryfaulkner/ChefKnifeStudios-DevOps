@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "ChefKnifeStudios.DevOps.AzureDevOpsPipelineRunner": {
+      "commandName": "Project",
+      "commandLineArgs": "approve --org henryfaulkner --project ChefKnifeStudios.DevOps --approval-id <return from list function> --token saNpUM1BlULW6OFYIkVoVXHUmXnZar5adBtUBNSndmj8PO8aOQjIJQQJ99BCACAAAAAAAAAAAAASAZDO1bcM --comment \"Approved by automation\" --status \"approved\""
+    }
+  }
+}

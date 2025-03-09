@@ -26,6 +26,19 @@ namespace ChefKnifeStudios.DevOps.AzureDevOpsPipelineRunner
             ConfigureApproveCommand(approveCommand);
             rootCommand.AddCommand(approveCommand);
 
+            // List approvals command
+            var listApprovalsCommand = new Command("list-approvals", "List all pending approvals");
+            ConfigureListApprovalsCommand(listApprovalsCommand);
+            rootCommand.AddCommand(listApprovalsCommand);
+
+            // List and approve pending approvals command
+            var listAndApproveCommand = new Command("list-and-approve-approvals", "List all pending approvals and approve them")
+            {
+                Description = "This command will list all pending approvals and approve each one automatically."
+            };
+            ConfigureListAndApproveApprovalsCommand(listAndApproveCommand);
+            rootCommand.AddCommand(listAndApproveCommand);
+
             return await rootCommand.InvokeAsync(args);
         }
 
@@ -55,7 +68,7 @@ namespace ChefKnifeStudios.DevOps.AzureDevOpsPipelineRunner
         {
             var orgOption = new Option<string>("--org", "Azure DevOps organization name") { IsRequired = true };
             var projectOption = new Option<string>("--project", "Azure DevOps project name") { IsRequired = true };
-            var approvalIdOption = new Option<int>("--approval-id", "ID of the approval to process") { IsRequired = true };
+            var approvalIdOption = new Option<string>("--approval-id", "ID of the approval to process") { IsRequired = true };
             var tokenOption = new Option<string>("--token", "Azure DevOps personal access token") { IsRequired = true };
             var commentOption = new Option<string>("--comment", () => "Approved programmatically", "Comment for the approval");
             var statusOption = new Option<string>("--status", () => "approved", "Status of the approval (approved or rejected)");
@@ -67,10 +80,46 @@ namespace ChefKnifeStudios.DevOps.AzureDevOpsPipelineRunner
             command.AddOption(commentOption);
             command.AddOption(statusOption);
 
-            command.SetHandler(async (string organization, string project, int approvalId, string token, string comment, string status) =>
+            command.SetHandler(async (string organization, string project, string approvalId, string token, string comment, string status) =>
             {
                 await ApproveStep(organization, project, approvalId, token, comment, status);
             }, orgOption, projectOption, approvalIdOption, tokenOption, commentOption, statusOption);
+        }
+
+        static void ConfigureListApprovalsCommand(Command command)
+        {
+            var orgOption = new Option<string>("--org", "Azure DevOps organization name") { IsRequired = true };
+            var projectOption = new Option<string>("--project", "Azure DevOps project name") { IsRequired = true };
+            var tokenOption = new Option<string>("--token", "Azure DevOps personal access token") { IsRequired = true };
+
+            command.AddOption(orgOption);
+            command.AddOption(projectOption);
+            command.AddOption(tokenOption);
+
+            command.SetHandler(async (string organization, string project, string token) =>
+            {
+                await ListLatestPendingApprovals(organization, project, token);
+            }, orgOption, projectOption, tokenOption);
+        }
+
+        static void ConfigureListAndApproveApprovalsCommand(Command command)
+        {
+            var orgOption = new Option<string>("--org", "Azure DevOps organization name") { IsRequired = true };
+            var projectOption = new Option<string>("--project", "Azure DevOps project name") { IsRequired = true };
+            var tokenOption = new Option<string>("--token", "Azure DevOps personal access token") { IsRequired = true };
+            var commentOption = new Option<string>("--comment", () => "Approved programmatically", "Comment for the approval");
+            var statusOption = new Option<string>("--status", () => "approved", "Status of the approval (approved or rejected)");
+
+            command.AddOption(orgOption);
+            command.AddOption(projectOption);
+            command.AddOption(tokenOption);
+            command.AddOption(commentOption);
+            command.AddOption(statusOption);
+
+            command.SetHandler(async (string organization, string project, string token, string comment, string status) =>
+            {
+                await ListAndApprovePendingApprovals(organization, project, token, comment, status);
+            }, orgOption, projectOption, tokenOption, commentOption, statusOption);
         }
 
         static async Task RunPipeline(string organization, string project, int pipelineId, string branch, string token, string variablesJson)
@@ -78,7 +127,7 @@ namespace ChefKnifeStudios.DevOps.AzureDevOpsPipelineRunner
             Console.WriteLine($"Triggering pipeline {pipelineId} on branch {branch}...");
 
             using var client = new HttpClient();
-            
+
             // Create authorization header with PAT
             var authToken = Convert.ToBase64String(Encoding.ASCII.GetBytes($":{token}"));
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", authToken);
@@ -106,7 +155,7 @@ namespace ChefKnifeStudios.DevOps.AzureDevOpsPipelineRunner
                 {
                     var variables = JsonSerializer.Deserialize<Dictionary<string, string>>(variablesJson);
                     var variablesPayload = new Dictionary<string, object>();
-                    
+
                     foreach (var variable in variables)
                     {
                         variablesPayload[variable.Key] = new Dictionary<string, string>
@@ -114,7 +163,7 @@ namespace ChefKnifeStudios.DevOps.AzureDevOpsPipelineRunner
                             ["value"] = variable.Value
                         };
                     }
-                    
+
                     payload["variables"] = variablesPayload;
                 }
                 catch (JsonException ex)
@@ -125,32 +174,32 @@ namespace ChefKnifeStudios.DevOps.AzureDevOpsPipelineRunner
             }
 
             // API URL to run the pipeline
-            var url = $"https://dev.azure.com/{organization}/{project}/_apis/pipelines/{pipelineId}/runs?api-version=6.0";
+            var url = $"https://dev.azure.com/{organization}/{project}/_apis/pipelines/{pipelineId}/runs?api-version=7.1";
 
             try
             {
                 // Make the API request
                 var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
                 var response = await client.PostAsync(url, content);
-                
+
                 // Handle the response
                 if (response.IsSuccessStatusCode)
                 {
                     var jsonResponse = await response.Content.ReadAsStringAsync();
                     var result = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(jsonResponse);
-                    
+
                     Console.WriteLine("Pipeline run triggered successfully!");
                     Console.WriteLine($"Run ID: {result["id"]}");
                     Console.WriteLine($"Pipeline name: {result["name"]}");
                     Console.WriteLine($"State: {result["state"]}");
-                    
-                    if (result.ContainsKey("_links") && 
-                        result["_links"].TryGetProperty("web", out var webLink) && 
+
+                    if (result.ContainsKey("_links") &&
+                        result["_links"].TryGetProperty("web", out var webLink) &&
                         webLink.TryGetProperty("href", out var href))
                     {
                         Console.WriteLine($"URL: {href}");
                     }
-                    
+
                     Console.WriteLine($"Time: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
                 }
                 else
@@ -165,12 +214,12 @@ namespace ChefKnifeStudios.DevOps.AzureDevOpsPipelineRunner
             }
         }
 
-        static async Task ApproveStep(string organization, string project, int approvalId, string token, string comment, string status)
+        static async Task ApproveStep(string organization, string project, string approvalId, string token, string comment, string status)
         {
-            Console.WriteLine($"Processing approval with ID {approvalId}...");
+            Console.WriteLine($"Processing approval with ID {approvalId}... {status} {comment}");
 
             using var client = new HttpClient();
-            
+
             // Create authorization header with PAT
             var authToken = Convert.ToBase64String(Encoding.ASCII.GetBytes($":{token}"));
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", authToken);
@@ -184,32 +233,40 @@ namespace ChefKnifeStudios.DevOps.AzureDevOpsPipelineRunner
                 return;
             }
 
-            // Prepare request payload
-            var payload = new Dictionary<string, object>
+            // Prepare request payload as an array
+            var payload = new[]
             {
-                ["status"] = approvalStatus,
-                ["comments"] = comment
+                new
+                {
+                    approvalId = approvalId,
+                    comment = comment,
+                    status = approvalStatus
+                }
             };
 
-            // API URL to update the approval
-            var url = $"https://dev.azure.com/{organization}/{project}/_apis/pipelines/approvals/{approvalId}?api-version=6.0-preview.1";
+            // API endpoint
+            var url = $"https://dev.azure.com/{organization}/{project}/_apis/pipelines/approvals?api-version=7.1";
 
             try
             {
-                // Make the API request (PATCH)
-                var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+                // Serialize payload with camelCase property names
+                var options = new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                };
+
+                var jsonContent = JsonSerializer.Serialize(payload, options);
+                var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+
+                // Send PATCH request
                 var request = new HttpRequestMessage(new HttpMethod("PATCH"), url) { Content = content };
                 var response = await client.SendAsync(request);
-                
+
                 // Handle the response
                 if (response.IsSuccessStatusCode)
                 {
-                    var jsonResponse = await response.Content.ReadAsStringAsync();
-                    var result = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(jsonResponse);
-                    
                     Console.WriteLine($"Approval {approvalId} processed successfully!");
-                    Console.WriteLine($"Status: {result["status"]}");
-                    Console.WriteLine($"Time: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                    var responseBody = await response.Content.ReadAsStringAsync();
                 }
                 else
                 {
@@ -223,101 +280,130 @@ namespace ChefKnifeStudios.DevOps.AzureDevOpsPipelineRunner
             }
         }
 
-        // Additional utility method to get pending approvals
-        static async Task<List<Dictionary<string, object>>> GetPendingApprovals(string organization, string project, string token)
+        static async Task<List<JsonElement>> ListLatestPendingApprovals(string organization, string project, string token)
         {
-            using var client = new HttpClient();
+            List<JsonElement> result = new List<JsonElement>();
             
+            Console.WriteLine("Retrieving the latest pending approvals for each pipeline (using API 7.1)...");
+
+            using var client = new HttpClient();
+
             // Create authorization header with PAT
             var authToken = Convert.ToBase64String(Encoding.ASCII.GetBytes($":{token}"));
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", authToken);
             client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-            // API URL to get pending approvals
-            var url = $"https://dev.azure.com/{organization}/{project}/_apis/pipelines/approvals?statusFilter=pending&api-version=6.0-preview.1";
+            // API URL to get all pending approvals
+            var url = $"https://dev.azure.com/{organization}/{project}/_apis/pipelines/approvals?statusFilter=pending&api-version=7.1";
 
             try
             {
+                Console.WriteLine($"Fetching pending approvals for project '{project}' in organization '{organization}'...");
+
                 var response = await client.GetAsync(url);
+                var responseBody = await response.Content.ReadAsStringAsync();
+
                 if (response.IsSuccessStatusCode)
                 {
-                    var jsonResponse = await response.Content.ReadAsStringAsync();
-                    var result = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(jsonResponse);
-                    
-                    // Convert to a more usable format
-                    var approvals = new List<Dictionary<string, object>>();
-                    if (result.TryGetValue("value", out var value) && value.ValueKind == JsonValueKind.Array)
+                    Console.WriteLine("API call successful. Processing response...");
+                    var responseData = JsonSerializer.Deserialize<JsonElement>(responseBody);
+
+                    if (responseData.TryGetProperty("count", out var countElement))
                     {
-                        foreach (var approval in value.EnumerateArray())
+                        int count = countElement.GetInt32();
+                        Console.WriteLine($"Found {count} approvals.");
+
+                        if (count > 0 && responseData.TryGetProperty("value", out var approvalsArray))
                         {
-                            var approvalDict = new Dictionary<string, object>();
-                            foreach (var property in approval.EnumerateObject())
+                            // Dictionary to store the latest approval per pipeline
+                            var latestApprovalsByPipeline = new Dictionary<string, JsonElement>();
+
+                            foreach (var approval in approvalsArray.EnumerateArray())
                             {
-                                approvalDict[property.Name] = ConvertJsonElement(property.Value);
+                                string pipelineName = approval.GetProperty("pipeline").GetProperty("name").GetString();
+                                string createdOn = approval.GetProperty("createdOn").GetString();
+
+                                if (string.IsNullOrEmpty(pipelineName))
+                                    continue;
+
+                                // Keep the latest approval based on createdOn timestamp
+                                if (!latestApprovalsByPipeline.TryGetValue(pipelineName, out var existingApproval) ||
+                                    DateTimeOffset.Parse(createdOn) > DateTimeOffset.Parse(existingApproval.GetProperty("createdOn").GetString()))
+                                {
+                                    latestApprovalsByPipeline[pipelineName] = approval;
+                                    result.Add(approval);
+                                }
                             }
-                            approvals.Add(approvalDict);
+
+                            // Display results
+                            Console.WriteLine("\nPipeline Name\t\tApproval ID\t\t\t\tStart Time\t\tApprover\tDetails URL");
+                            Console.WriteLine("-----------------------------------------------------------------------------------------------------");
+
+                            foreach (var kvp in latestApprovalsByPipeline)
+                            {
+                                var approval = kvp.Value;
+
+                                string id = approval.GetProperty("id").GetString();
+                                string pipelineName = kvp.Key;
+                                string startTime = approval.GetProperty("createdOn").GetString();
+                                string approver = approval.GetProperty("minRequiredApprovers").GetInt32().ToString();
+                                string detailUrl = approval.GetProperty("_links").GetProperty("self").GetProperty("href").GetString();
+
+                                Console.WriteLine($"{pipelineName,-20}\t{id,-36}\t{startTime,-20}\t{approver,-10}\t{detailUrl}");
+                            }
+                        }
+                        else
+                        {
+                            Console.WriteLine("No pending approvals found.");
                         }
                     }
-                    
-                    return approvals;
+                    else
+                    {
+                        Console.WriteLine("Unexpected response format: 'count' property not found.");
+                        Console.WriteLine(responseBody);
+                    }
                 }
                 else
                 {
-                    Console.WriteLine($"Error: {response.StatusCode}");
-                    Console.WriteLine(await response.Content.ReadAsStringAsync());
-                    return new List<Dictionary<string, object>>();
+                    Console.WriteLine($"Error: {response.StatusCode} - {response.ReasonPhrase}");
+                    Console.WriteLine("Response Body:");
+                    Console.WriteLine(responseBody);
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error getting pending approvals: {ex.Message}");
-                return new List<Dictionary<string, object>>();
+                Console.WriteLine($"Error retrieving approvals: {ex.Message}");
+            }
+            return result;
+        }
+
+        static async Task ListAndApprovePendingApprovals(string organization, string project, string token, string comment = "Approved programmatically", string status = "approved")
+        {
+            // First, list all the latest pending approvals
+            Console.WriteLine("Listing latest pending approvals...");
+
+            // Call ListLatestPendingApprovals to list the pending approvals
+            var approvals = await ListLatestPendingApprovals(organization, project, token);
+
+            if (approvals.Count == 0)
+            {
+                Console.WriteLine("No pending approvals found.");
+                return;
+            }
+
+            // After listing the approvals, approve them one by one
+            foreach (var approval in approvals)
+            {
+                string approvalId = approval.GetProperty("id").GetString();
+                string pipelineName = approval.GetProperty("pipeline").GetProperty("name").GetString();
+
+                // Display information about the approval
+                Console.WriteLine($"Approving approval for pipeline: {pipelineName} (ID: {approvalId})");
+
+                // Call ApproveStep to approve the approval
+                await ApproveStep(organization, project, approvalId, token, comment, status);
             }
         }
 
-        // Helper method to convert JsonElement to appropriate .NET types
-        static object ConvertJsonElement(JsonElement element)
-        {
-            switch (element.ValueKind)
-            {
-                case JsonValueKind.Object:
-                    var obj = new Dictionary<string, object>();
-                    foreach (var property in element.EnumerateObject())
-                    {
-                        obj[property.Name] = ConvertJsonElement(property.Value);
-                    }
-                    return obj;
-                
-                case JsonValueKind.Array:
-                    var array = new List<object>();
-                    foreach (var item in element.EnumerateArray())
-                    {
-                        array.Add(ConvertJsonElement(item));
-                    }
-                    return array;
-                
-                case JsonValueKind.String:
-                    return element.GetString();
-                
-                case JsonValueKind.Number:
-                    if (element.TryGetInt32(out int intValue))
-                        return intValue;
-                    if (element.TryGetInt64(out long longValue))
-                        return longValue;
-                    return element.GetDouble();
-                
-                case JsonValueKind.True:
-                    return true;
-                
-                case JsonValueKind.False:
-                    return false;
-                
-                case JsonValueKind.Null:
-                    return null;
-                
-                default:
-                    return null;
-            }
-        }
     }
 }
