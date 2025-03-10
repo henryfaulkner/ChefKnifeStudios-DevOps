@@ -33,10 +33,10 @@ public class HappyClass
         _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
     }
 
-    public async Task HappyFunction(int pipelineId, string[] stagesToSkip)
+    public async Task HappyFunctionAsync(int pipelineId, string[] stagesToSkip)
     {
         int runId = await RunPipelineAsync(pipelineId, stagesToSkip);
-        int buildId = await GetLatestBuildAsync(pipelineId);
+        //int buildId = await GetLatestBuildAsync(pipelineId);
 
         int timeoutMs = 10 * 60 * 60 * 1000;
         bool isTimedOut = false;
@@ -44,8 +44,8 @@ public class HappyClass
 
         while (!isTimedOut)
         {
-            string approvalId = await GetFirstBuildApprovalAsync(pipelineId);
-            if (approvalId == null) continue;
+            string approvalId = await GetFirstBuildApprovalAsync(runId);
+            if (string.IsNullOrWhiteSpace(approvalId)) continue;
             await ApproveReviewAsync(approvalId);
             isTimedOut = true;
         }
@@ -53,6 +53,7 @@ public class HappyClass
 
     async Task<int> RunPipelineAsync(int pipelineId, string[] stagesToSkip)
     {
+        Console.WriteLine("Start RunPipelineAsync");
         int result = -1; 
 
         var payload = new Dictionary<string, object>
@@ -100,11 +101,13 @@ public class HappyClass
             Console.WriteLine($"Error triggering pipeline: {ex.Message}");
         }
 
+        Console.WriteLine($"End RunPipelineAsync {result}");
         return result;
     }
 
     async Task<int> GetLatestBuildAsync(int pipelineId)
     {
+        Console.WriteLine("Start GetLatestBuildAsync");
         int maxId = -1;
 
         string url = $"https://dev.azure.com/{_org}/{_project}/_apis/build/builds?api-version=7.1";
@@ -139,11 +142,13 @@ public class HappyClass
             Console.WriteLine($"Error getting latest build: {ex.Message}");
         }
 
+        Console.WriteLine($"End GetLatestBuildAsync {maxId}");
         return maxId;
     }
 
     async Task<string> GetFirstBuildApprovalAsync(int buildId)
     {
+        Console.WriteLine("Start GetFirstBuildApprovalAsync");
         var result = string.Empty;
 
         string url = $"https://dev.azure.com/{_org}/{_project}/_apis/build/builds/{buildId}/timeline?api-version=7.1";
@@ -156,8 +161,9 @@ public class HappyClass
             {
                 var jsonResponse = await response.Content.ReadAsStringAsync();
                 var resBody = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(jsonResponse);
+                Console.WriteLine(jsonResponse);
 
-                foreach (JsonElement item in resBody["record"].EnumerateArray())
+                foreach (JsonElement item in resBody["records"].EnumerateArray())
                 {
                     if (item.GetProperty("type").ToString() == "Checkpoint.Approval")
                     {
@@ -178,11 +184,13 @@ public class HappyClass
             Console.WriteLine($"Error getting latest build approval: {ex.Message}");
         }
 
+        Console.WriteLine($"End GetFirstBuildApprovalAsync {result}");
         return result;
     }
 
     async Task ApproveReviewAsync(string approvalId)
     {
+        Console.WriteLine("Start ApproveReviewAsync");
         var url = $"https://dev.azure.com/{_org}/{_project}/_apis/pipelines/approvals?api-version=7.1";
         var payload = new[]
         {
@@ -224,5 +232,6 @@ public class HappyClass
         {
             Console.WriteLine($"Error approving {approvalId}: {ex.Message}");
         }
+        Console.WriteLine("End ApproveReviewAsync");
     }
 }

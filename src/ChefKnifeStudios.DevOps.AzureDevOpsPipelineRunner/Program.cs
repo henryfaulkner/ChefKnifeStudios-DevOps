@@ -53,6 +53,14 @@ namespace ChefKnifeStudios.DevOps.AzureDevOpsPipelineRunner
             ConfigureListAndApproveApprovalsCommand(listAndApproveCommand);
             rootCommand.AddCommand(listAndApproveCommand);
 
+            var doTheThingCommand = new Command("do-it", "Do the thing I am trying to do")
+            {
+                Description = "This command will do the thing I am trying to do."
+            };
+            ConfigureDoTheThingCommand(doTheThingCommand);
+            rootCommand.AddCommand(doTheThingCommand);
+
+
             return await rootCommand.InvokeAsync(args);
         }
 
@@ -113,6 +121,26 @@ namespace ChefKnifeStudios.DevOps.AzureDevOpsPipelineRunner
 
                 await ListAndApprovePendingApprovals(organization, project, token, APPROVAL_COMMENT, APPROVAL_STATUS);
             });
+        }
+
+        static void ConfigureDoTheThingCommand(Command command)
+        {
+            var pipelineOption = new Option<string>("--pipeline", "The pipeline config to run") { IsRequired = true };
+            
+            command.AddOption(pipelineOption);
+            command.SetHandler(async (string pipeline) =>
+            {
+                string organization = Configuration["AzureDevOps:Organization"] ?? string.Empty;
+                string project = Configuration["AzureDevOps:Project"] ?? string.Empty;
+                string branch = Configuration["AzureDevOps:Branch"] ?? string.Empty;
+                string token = Configuration["AzureDevOps:PersonalAccessToken"] ?? string.Empty;
+                HappyClass hc = new HappyClass(organization, project, branch, token, APPROVAL_COMMENT, APPROVAL_STATUS);
+
+                int pipelineId = int.Parse(Configuration[$"Pipelines:{pipeline}:PipelineId"]);
+                string[] stagesToSkip = Configuration.GetSection($"Pipelines:{pipeline}:StagesToSkip").GetChildren().ToArray().Select(c => c.Value).ToArray();
+
+                await DoTheThingAsync(hc, pipelineId, stagesToSkip);
+            }, pipelineOption);
         }
 
         // stagesToSkip
@@ -399,5 +427,9 @@ namespace ChefKnifeStudios.DevOps.AzureDevOpsPipelineRunner
             }
         }
 
+        static async Task DoTheThingAsync(HappyClass hc, int pipelineId, string[] stagesToSkip)
+        {
+            await hc.HappyFunctionAsync(pipelineId, stagesToSkip);
+        }
     }
 }

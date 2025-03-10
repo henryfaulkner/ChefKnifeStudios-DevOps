@@ -1,7 +1,6 @@
 using System;
 using System.Threading.Tasks;
 using System.Threading;
-using Godot;
 
 public static class TimingFunctions
 {
@@ -34,7 +33,7 @@ public static class TimingFunctions
                 catch (TaskCanceledException ex)
                 {
                     // Task was canceled
-                    GD.PrintErr($"SetInterval still running after cancellation. {ex.Message}");
+                    Console.WriteLine($"SetInterval still running after cancellation. {ex.Message}");
                     break;
                 }
             }
