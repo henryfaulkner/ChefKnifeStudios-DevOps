@@ -38,7 +38,7 @@ stages:
           }
 
 - stage: TestDeploy
-  displayName: 'Stage Requiring Test Approval'
+  displayName: 'QA'
   dependsOn: Stage1
   jobs:
   - deployment: DeploymentJob
@@ -58,7 +58,7 @@ stages:
                 Write-Host "The approver granted permission to proceed."
 
 - stage: StageDeploy
-  displayName: 'Stage Requiring Prod Approval'
+  displayName: 'Staging'
   dependsOn: Stage1
   jobs:
   - deployment: DeploymentJob
@@ -78,7 +78,7 @@ stages:
                 Write-Host "The approver granted permission to proceed."
 
 - stage: ProdDeploy
-  displayName: 'Stage Requiring Prod Approval'
+  displayName: 'Prod'
   dependsOn: StageDeploy
   jobs:
   - deployment: DeploymentJob

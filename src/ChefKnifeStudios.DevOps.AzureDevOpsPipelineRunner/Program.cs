@@ -31,7 +31,7 @@ namespace ChefKnifeStudios.DevOps.AzureDevOpsPipelineRunner
             var rootCommand = new RootCommand("Azure DevOps pipeline tools");
 
             // Run pipeline command
-            var runCommand = new Command("run-pipline", "Run an Azure DevOps pipeline");
+            var runCommand = new Command("run-pipeline", "Run an Azure DevOps pipeline");
             ConfigureRunPipelineCommand(runCommand);
             rootCommand.AddCommand(runCommand);
 
@@ -46,7 +46,7 @@ namespace ChefKnifeStudios.DevOps.AzureDevOpsPipelineRunner
             rootCommand.AddCommand(listApprovalsCommand);
 
             // List and approve pending approvals command
-            var listAndApproveCommand = new Command("list-and-approve-approvals", "List all pending approvals and approve them")
+            var listAndApproveCommand = new Command("approve-latest", "Approve latest pending DevOps approval request")
             {
                 Description = "This command will list all pending approvals and approve each one automatically."
             };
@@ -98,7 +98,6 @@ namespace ChefKnifeStudios.DevOps.AzureDevOpsPipelineRunner
                 string organization = Configuration["AzureDevOps:Organization"] ?? string.Empty;
                 string project = Configuration["AzureDevOps:Project"] ?? string.Empty;
                 string token = Configuration["AzureDevOps:PersonalAccessToken"] ?? string.Empty;
-                string environment = Configuration["AzureDevOps:Environment"] ?? string.Empty;
 
                 await ListLatestPendingApprovals(organization, project, token);
             });
@@ -116,6 +115,8 @@ namespace ChefKnifeStudios.DevOps.AzureDevOpsPipelineRunner
             });
         }
 
+        // stagesToSkip
+        // https://stackoverflow.com/questions/71549915/using-rest-api-to-trigger-a-specific-stage-within-a-yaml-pipeline
         static async Task RunPipeline(string organization, string project, int pipelineId, string branch, string token, string variablesJson)
         {
             Console.WriteLine($"Triggering pipeline {pipelineId} on branch {branch}...");
@@ -139,7 +140,8 @@ namespace ChefKnifeStudios.DevOps.AzureDevOpsPipelineRunner
                             ["refName"] = $"refs/heads/{branch}"
                         }
                     }
-                }
+                },
+                ["stagesToSkip"] = new string[] { "StageDeploy", "ProdDeploy" }
             };
 
             // Add variables if provided
@@ -316,11 +318,7 @@ namespace ChefKnifeStudios.DevOps.AzureDevOpsPipelineRunner
                             {
                                 Console.WriteLine(approval.ToString());
                                 string pipelineName = approval.GetProperty("pipeline").GetProperty("name").GetString();
-                                string createdOn = approval.GetProperty("createdOn").GetString();
-                                string environmentName = approval.GetProperty("environment").GetProperty("name").GetString();
-
-                                if (string.IsNullOrEmpty(pipelineName) || environmentName != "QA")
-                                    continue;
+                                string createdOn = approval.GetProperty("createdOn").GetString(); 
 
                                 // Keep the latest approval based on createdOn timestamp
                                 if (!latestApprovalsByPipeline.TryGetValue(pipelineName, out var existingApproval) ||
